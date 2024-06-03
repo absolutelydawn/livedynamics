@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
-const env = require('dotenv').config({ path: '.env' });
+const env = require('dotenv').config({ path: '../.env' });
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
