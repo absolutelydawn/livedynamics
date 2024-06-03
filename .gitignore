@@ -1,0 +1,44 @@
+## .env
+.env
+
+## c
+c/*
+c/*.o
+c/**/*
+!c/**/
+!c/**/*.c
+!c/**/lib/
+!c/**/lib/*.h
+!c/**/Makefile
+!c/**/Makefile.*
+
+## java
+**/*.class
+
+## scala
+scala/**/project
+scala/**/target
+
+## maven
+maven/**/target
+
+## nodejs
+**/node_modules
+**/package-lock.json
+conf/*
+conf/pool.js
+
+## python venv 
+**/.venv
+**/__pycache__/
+**/secret.json
+
+**/chromedriver
+
+## aws
+.c9
+
+**/uploadedFiles
+**/uploadedVideos
+
+**/swagger
