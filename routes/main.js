@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
-const env = require('dotenv').config({ path: '../.env' });
+const env = require('dotenv').config({ path: '.env' });
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -26,13 +26,13 @@ app.post('/upload', upload.single('file'), (req, res) => {
     const fileContent = fs.readFileSync(req.file.path);
     const params = {
         Bucket: BUCKET_NAME,
-        Key: `uploadedVideos/${req.file.originalname}`, // 업로드할 폴더 경로 수정
+        Key: `uploadedVideos/${req.file.originalname}`, // 원본 영상 업로드 경로 : uploadedVideos/
         Body: fileContent
     };
     s3.upload(params, (err, data) => {
         if (err) throw err;
         fs.unlinkSync(req.file.path); // 로컬에 저장된 파일 삭제
-        res.redirect('/list');
+        res.send(`<script>alert("업로드가 성공하였습니다."); window.location.href = "/";</script>`);
     });
 });
 
@@ -41,71 +41,27 @@ app.get('/list', (req, res) => {
     var params = {
         Bucket: BUCKET_NAME,
         Delimiter: '/',
-        Prefix: 'uploadedVideos/', // 파일 목록 조회 폴더 경로 수정
+        Prefix: 'uploadedVideos/', 
     };
     s3.listObjects(params, function (err, data) {
         if (err) throw err;
-        res.writeHead(200);
-        var template = `
-            <!doctype html>
-            <html>
-            <head>
-                <title>Result</title>
-                <meta charset="utf-8">
-            </head>
-            <body>
-                <form ref='uploadForm' id='uploadForm' action='/upload' method='post' encType="multipart/form-data">
-                    <input type="file" name="file" />
-                    <input type='submit' value='Upload!' />
-                </form>
-                <table border="1" margin: auto; text-align: center;>
-                    <tr>
-                        <th> Key </th>
-                        <th> LastModified </th>
-                        <th> Size </th>
-                        <th> StorageClass </th>
-                        <th> Down </th>
-                        <th> Del </th>
-                    </tr>
-        `;
-        for (var i = 1; i < data.Contents.length; i++) {
-        template += `
-                    <tr>
-                        <th> ${data.Contents[i]['Key']} </th>
-                        <th> ${data.Contents[i]['LastModified']} </th>
-                        <th> ${data.Contents[i]['Size']} </th>
-                        <th> ${data.Contents[i]['StorageClass']} </th>
-                        <th> 
-                            <form method='post' action='downloadFile'>
-                            <button type='submit' name='dlKey' value=${data.Contents[i]['Key']}>Down</button>
-                            </form>
-                        </th>
-                        <th> 
-                            <form method='post' action='deleteFile'>
-                            <button type='submit' name='dlKey' value=${data.Contents[i]['Key']}>Del</button>
-                            </form>
-                        </th>
-                    </tr>
-            `;
-        }
-        template += `
-                </table>
-            </body>
-            </html>
-            `;
-        res.end(template);
+        var fileList = data.Contents.map(item => ({
+            key: item.Key,
+            url: `https://${BUCKET_NAME}.s3.${MYREGION}.amazonaws.com/${item.Key}`
+        }));
+        res.json(fileList);
     });
 });
 
-// 파일 다운로드 라우트 (Read)
-app.post('/downloadFile', (req, res) => {
+// 파일 다운로드 라우트 (Read) : download가 아니라 다른이름으로 바꾸기
+app.get('/downloadFile', (req, res) => {
     const params = {
         Bucket: BUCKET_NAME,
-        Key: req.body.dlKey
+        Key: req.query.key
     };
     s3.getObject(params, (err, data) => {
         if (err) throw err;
-        res.attachment(req.body.dlKey);
+        res.attachment(req.query.key);
         res.send(data.Body);
     });
 });
@@ -118,8 +74,10 @@ app.post('/deleteFile', (req, res) => {
     };
     s3.deleteObject(params, (err, data) => {
         if (err) throw err;
-        res.redirect('/list');
+        res.send({ success: true });
     });
 });
+
+app.use(express.static('public'));
 
 module.exports = app;
