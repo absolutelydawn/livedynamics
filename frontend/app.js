@@ -1,20 +1,26 @@
-const express = require('express')
-const morgan = require('morgan')
-const path = require('path')
-const app =express()
-const bodyParser = require('body-parser')
-const cookieParser = require('cookie-parser')
+const express = require('express');
+const path = require('path');
+const bodyParser = require('body-parser');
+const mainRouter = require('./routes/main');
+const env = require('dotenv').config({ path: '../.env' });
 
-app.set('port', process.env.PORT || 8000)
-app.use(morgan('dev'))
-app.use(bodyParser.json())
-app.use(bodyParser.urlencoded({ extended: false }))
-app.use(cookieParser())
-app.use(express.static(path.join(__dirname, 'public')))
+const app = express();
 
-var main = require('./routes/main.js')
-app.use('/', main)
+// 정적 파일 서빙
+app.use(express.static(path.join(__dirname, 'public')));
 
-app.listen(app.get('port'), () => {
-    console.log('8000 Port: Server Started~!!')
+// Body parser 설정
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// 라우터 사용
+app.use('/', mainRouter);
+
+const PORT = process.env.PORT || 8000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
+
+module.exports = app;
