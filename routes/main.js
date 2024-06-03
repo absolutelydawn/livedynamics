@@ -53,18 +53,18 @@ app.get('/list', (req, res) => {
     });
 });
 
-// 파일 다운로드 라우트 (Read) : download가 아니라 다른이름으로 바꾸기
-app.get('/downloadFile', (req, res) => {
-    const params = {
-        Bucket: BUCKET_NAME,
-        Key: req.query.key
-    };
-    s3.getObject(params, (err, data) => {
-        if (err) throw err;
-        res.attachment(req.query.key);
-        res.send(data.Body);
-    });
-});
+// // 파일 다운로드 라우트 (Read) : download가 아니라 다른이름으로 바꾸기
+// app.get('/downloadFile', (req, res) => {
+//     const params = {
+//         Bucket: BUCKET_NAME,
+//         Key: req.query.key
+//     };
+//     s3.getObject(params, (err, data) => {
+//         if (err) throw err;
+//         res.attachment(req.query.key);
+//         res.send(data.Body);
+//     });
+// });
 
 // 파일 삭제 라우트 (Delete)
 app.post('/deleteFile', (req, res) => {
