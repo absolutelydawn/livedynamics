@@ -1,0 +1,15 @@
+node_modules/
+package-lock.json
+package.json
+
+.env
+
+Dockerfile
+
+*.mp4 
+*.png
+myenv/
+
+cap*/
+__pycache__/
+*.sh
