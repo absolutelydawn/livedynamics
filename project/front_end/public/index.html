@@ -3,22 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Processing</title>
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <title>Video Processor</title>
 </head>
 <body>
-    <h1>Video Processing</h1>
-    <button id="process-video-button">Process Video</button>
-    <div id="result"></div>
+    <h1>Video Processor</h1>
+    <button id="process-video">Process Video</button>
+    <button id="split-upload-video">Split and Upload Video</button>
 
     <script>
-        document.getElementById('process-video-button').addEventListener('click', async () => {
+        document.getElementById('process-video').addEventListener('click', async () => {
             try {
-                const response = await axios.get('/process-video');
-                document.getElementById('result').innerText = 'Video processing completed: ' + response.data.message;
+                const response = await fetch('/process-video');
+                const data = await response.json();
+                alert('Video processed: ' + JSON.stringify(data));
             } catch (error) {
                 console.error('Error processing video:', error);
-                document.getElementById('result').innerText = 'Error processing video: ' + (error.response ? error.response.data.error : error.message);
+                alert('Failed to process video');
+            }
+        });
+
+        document.getElementById('split-upload-video').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/split-and-upload-video', { method: 'POST' });
+                const data = await response.json();
+                alert('Video split and uploaded: ' + JSON.stringify(data));
+            } catch (error) {
+                console.error('Error splitting and uploading video:', error);
+                alert('Failed to split and upload video');
             }
         });
     </script>
