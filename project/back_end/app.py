@@ -1,13 +1,13 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException
 import os
 import boto3
 import cv2
 import ffmpeg
-import uvicorn
 import easyocr
 from pymongo import MongoClient
 from tempfile import NamedTemporaryFile
 from dotenv import load_dotenv
+import logging
 
 app = FastAPI()
 
@@ -46,8 +46,7 @@ def preprocess_image(image):
     dim = (width, height)
     resized = cv2.resize(image, dim, interpolation=cv2.INTER_CUBIC)
 
-    # Grayscale, binary, contrast increase
-    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(resized, cv2.COLOR_BGRAY)
     _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     enhanced = cv2.convertScaleAbs(binary, alpha=1.5, beta=0)
 
@@ -78,14 +77,14 @@ async def process_video():
         capture_dir1 = './captures_team1'
         os.makedirs(capture_dir1, exist_ok=True)
 
-        process_skip = 900
+        process_skip = 400
         frame_skip = 80
         threshold = 0.90
         name_counts = {}
         unique_data_count = 0
 
         fps = cap.get(cv2.CAP_PROP_FPS)
-        print("프레임 레이트:", fps)
+        logging.info("프레임 레이트: %s", fps)
 
         template1 = cv2.imread('./template1.png')
         hist_template1 = calculate_histogram(template1)
@@ -103,9 +102,9 @@ async def process_video():
 
             hist_roi = calculate_histogram(roi_frame)
             score1 = cv2.compareHist(hist_roi, hist_template1, cv2.HISTCMP_CORREL)
-            print('임계치 이상인지 판별중....')
+            logging.info('임계치 이상인지 판별중....')
             if score1 > threshold:
-                print('영상 캡처중입니다...')
+                logging.info('영상 캡처중입니다...')
                 capture_path = os.path.join(capture_dir1, f'capture_{frame_count}.png')
                 
                 # ffmpeg 명령 실행
@@ -118,42 +117,40 @@ async def process_video():
                 )
                 out, err = process.communicate()
 
-                print(f'FFmpeg stdout: {out}')
-                print(f'FFmpeg stderr: {err}')
+                logging.info(f'FFmpeg stdout: {out}')
+                logging.info(f'FFmpeg stderr: {err}')
 
                 if process.returncode != 0:
-                    print(f'FFmpeg process failed with return code {process.returncode}')
+                    logging.error(f'FFmpeg process failed with return code {process.returncode}')
                     continue
 
-                print(f"Captured frame {frame_count} at {capture_path}")
-                print('score1 :', score1)
+                logging.info(f"Captured frame {frame_count} at {capture_path}")
+                logging.info('score1 :', score1)
 
-                print('캡처한 이미지를 읽는중....')
+                logging.info('캡처한 이미지를 읽는중....')
                 image = cv2.imread(capture_path)
                 if image is None:
-                    print(f"File {capture_path} does not exist.")
+                    logging.error(f"File {capture_path} does not exist.")
                     continue
 
-                # Set ROI
                 height, width = image.shape[:2]
                 roi_easyocr = image[int(height * 0.07):int(height * 0.92),
                                     int(width * 0.215):int(width * 0.574)]
-                print('ocr 진행중입니다..')
-                print('시간이 오래 소요될수 있습니다..')
-                # Extract text using EasyOCR
+                logging.info('ocr 진행중입니다..')
+                logging.info('시간이 오래 소요될수 있습니다..')
                 roi_easyocr = preprocess_image(roi_easyocr)
                 reader = easyocr.Reader(['ko', 'en'])
                 result_easyocr = reader.readtext(roi_easyocr, detail=0)
-                print('ocr 완료..')
+                logging.info('ocr 완료..')
 
                 name_list = result_easyocr.copy()
 
-                print(f'Name list count: {len(name_list)}')
+                logging.info(f'Name list count: %len(name_list)')
 
                 if 'SUBSTITUTES' in name_list:
                     name_list.remove('SUBSTITUTES')
 
-                print(name_list)
+                logging.info(name_list)
                 pname_list = []
                 pnum_list = []
                 team_name = name_list[0]
@@ -161,12 +158,12 @@ async def process_video():
                 for some in range(1, len(name_list)):
                     if some % 2 == 0:
                         pname_list.append(name_list[some])
-                        print(len(pname_list))
+                        logging.info(len(pname_list))
                     else:
                         pnum_list.append(name_list[some])
 
                 if len(pname_list) == 11:
-                    print('작동 여부 테스트.')
+                    logging.info('작동 여부 테스트.')
 
                     key = (team_name, tuple(pname_list), tuple(pnum_list))
                     if key not in name_counts:
@@ -174,32 +171,32 @@ async def process_video():
                     else:
                         name_counts[key] += 1
 
-                    if name_counts[key] == 2:
+                    if name_counts[key] == 1:
                         prior_data.insert_one({
                             'team_name': team_name,
                             'name': pname_list,
                             'num': pnum_list,
                             'frame': frame_count
                         })
-                        print('작동 여부 테스트.')
+                        logging.info('작동 여부 테스트.')
 
                         unique_data_count += 1
-                        print(f"DB 저장 완료했습니다.!!")
-                        print({key})
+                        logging.info(f"DB 저장 완료했습니다.!!")
+                        logging.info({key})
 
                         if unique_data_count >= 2:
-                            print("두팀의 정보 저장 완료!!")
+                            logging.info("두팀의 정보 저장 완료!!")
                             break
-                        frame_count += process_skip  # 현재 위치에서 900 프레임 건너뛰기 설정
-                        print('900프레임(30초)을 스킵합니다!!!')
-                        print('다음 프레임 찾는중....')
+                        frame_count += process_skip  
+                        logging.info('900프레임(30초)을 스킵합니다!!!')
+                        logging.info('다음 프레임 찾는중....')
 
         cap.release()
         os.remove(temp_file_path)
         return {"message": "Video processing completed"}
     except Exception as e:
+        logging.error(e)
         return {"error": str(e)}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

@@ -3,10 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OCR Processing</title>
+    <title>Video Processing</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 </head>
 <body>
-    <button id="ocrButton">OCR 진행</button>
-    <script src="app.js"></script>
+    <h1>Video Processing</h1>
+    <button id="process-video-button">Process Video</button>
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('process-video-button').addEventListener('click', async () => {
+            try {
+                const response = await axios.get('/process-video');
+                document.getElementById('result').innerText = 'Video processing completed: ' + response.data.message;
+            } catch (error) {
+                console.error('Error processing video:', error);
+                document.getElementById('result').innerText = 'Error processing video: ' + (error.response ? error.response.data.error : error.message);
+            }
+        });
+    </script>
 </body>
 </html>
