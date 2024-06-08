@@ -2,25 +2,36 @@ from fastapi import FastAPI, HTTPException
 import os
 import boto3
 import cv2
-import ffmpeg
 import easyocr
-from pymongo import MongoClient
-from tempfile import NamedTemporaryFile
+from pymongo import MongoClient, errors
 from dotenv import load_dotenv
 import logging
+import subprocess
+from tempfile import NamedTemporaryFile
+import tempfile
+# 설정 로그
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Load environment variables
+# 환경 변수 로드
 load_dotenv()
 
-# MongoDB Setup
+# MongoDB 설정
 mongo_uri = os.getenv('MONGO_URI')
 client = MongoClient(mongo_uri)
 db = client['ocr']
 prior_data = db['prior_data']
 
-# AWS S3 Setup
+# MongoDB 연결 테스트
+try:
+    client.admin.command('ping')
+    logger.info("MongoDB 연결 성공")
+except errors.ConnectionFailure:
+    logger.error("MongoDB 연결 실패")
+
+# AWS S3 설정
 s3_client = boto3.client(
     's3',
     aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
@@ -30,29 +41,27 @@ s3_client = boto3.client(
 
 BUCKET_NAME = os.getenv('AWS_S3_BUCKET')
 S3_PATH = os.getenv('AWS_S3_PREFIX')
+BUCKET_NAME = os.getenv('AWS_S3_BUCKET')
+S3_UPLOAD_PATH = 'uploadedFiles/'  # 추가
+S3_OUTPUT_PATH = 'sepVideo/'
 
-# 히스토그램 템플릿 판별
 def calculate_histogram(image):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     hist = cv2.calcHist([hsv], [0, 1], None, [180, 256], [0, 180, 0, 256])
     cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
     return hist
 
-# 이미지 해상도 조정
 def preprocess_image(image):
-    scale_percent = 900  # Scale up by 900%
+    scale_percent = 900
     width = int(image.shape[1] * scale_percent / 100)
     height = int(image.shape[0] * scale_percent / 100)
     dim = (width, height)
     resized = cv2.resize(image, dim, interpolation=cv2.INTER_CUBIC)
-
-    gray = cv2.cvtColor(resized, cv2.COLOR_BGRAY)
+    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     enhanced = cv2.convertScaleAbs(binary, alpha=1.5, beta=0)
-
     return enhanced
 
-# S3에서 최신 파일 다운로드
 def download_latest_s3_file(bucket_name, s3_path, download_path):
     response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=s3_path)
     if 'Contents' not in response:
@@ -63,17 +72,19 @@ def download_latest_s3_file(bucket_name, s3_path, download_path):
     s3_client.download_file(bucket_name, latest_file_key, download_path)
     return latest_file_key
 
-# 비디오 처리
 @app.post("/process-video/")
 async def process_video():
     try:
-        # S3에서 최신 파일 다운로드
-        with NamedTemporaryFile(delete=False) as temp_file:
+        logger.info("비디오 처리 시작")
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             temp_file_path = temp_file.name
-            latest_file_key = download_latest_s3_file(BUCKET_NAME, S3_PATH, temp_file_path)
-        
+        logger.info(f"S3에서 최신 파일을 {temp_file_path}로 다운로드")
+        latest_file_key = download_latest_s3_file(BUCKET_NAME, S3_PATH, temp_file_path)
+        logger.info(f"S3에서 파일 다운로드 완료: {latest_file_key}")
+
         cap = cv2.VideoCapture(temp_file_path)
         frame_count = 0
+        capture_count = 0
         capture_dir1 = './captures_team1'
         os.makedirs(capture_dir1, exist_ok=True)
 
@@ -84,7 +95,7 @@ async def process_video():
         unique_data_count = 0
 
         fps = cap.get(cv2.CAP_PROP_FPS)
-        logging.info("프레임 레이트: %s", fps)
+        logger.info(f"프레임 레이트: {fps}")
 
         template1 = cv2.imread('./template1.png')
         hist_template1 = calculate_histogram(template1)
@@ -92,6 +103,7 @@ async def process_video():
         while True:
             ret, frame = cap.read()
             if not ret:
+                logger.info("비디오 스트림의 끝에 도달")
                 break
             frame_count += 1
             if frame_count % frame_skip != 0:
@@ -102,55 +114,62 @@ async def process_video():
 
             hist_roi = calculate_histogram(roi_frame)
             score1 = cv2.compareHist(hist_roi, hist_template1, cv2.HISTCMP_CORREL)
-            logging.info('임계치 이상인지 판별중....')
+            logger.info(f'프레임 {frame_count}의 히스토그램 유사도 점수: {score1}')
             if score1 > threshold:
-                logging.info('영상 캡처중입니다...')
-                capture_path = os.path.join(capture_dir1, f'capture_{frame_count}.png')
-                
-                # ffmpeg 명령 실행
-                process = (
-                    ffmpeg
-                    .input(temp_file_path)
-                    .filter('select', f'eq(n,{frame_count})')
-                    .output(capture_path, vframes=1)
-                    .run_async(pipe_stdout=True, pipe_stderr=True)
-                )
-                out, err = process.communicate()
+                capture_count += 1
+                logger.info(f'프레임 {frame_count}에서 캡처 시작')
+                capture_path = os.path.join(capture_dir1, f'capture_{capture_count}.png')
 
-                logging.info(f'FFmpeg stdout: {out}')
-                logging.info(f'FFmpeg stderr: {err}')
+                ffmpeg_command = [
+                    'ffmpeg', '-i', temp_file_path,
+                    '-vf', f'select=eq(n\\,{frame_count})', '-vsync', 'vfr',
+                    '-frames:v', '1', '-update', '1', capture_path
+                ]
+                logger.info(f'Running FFmpeg command: {ffmpeg_command}')
+
+                process = subprocess.run(
+                    ffmpeg_command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+
+                logger.info(f'FFmpeg stdout: {process.stdout.decode()}')
+                logger.info(f'FFmpeg stderr: {process.stderr.decode()}')
 
                 if process.returncode != 0:
-                    logging.error(f'FFmpeg process failed with return code {process.returncode}')
+                    logger.error(f'FFmpeg 프로세스가 반환 코드 {process.returncode}로 실패')
                     continue
 
-                logging.info(f"Captured frame {frame_count} at {capture_path}")
-                logging.info('score1 :', score1)
+                # 파일이 정상적으로 생성되었는지 확인
+                if not os.path.exists(capture_path):
+                    logger.error(f"파일 {capture_path}이 존재하지 않음")
+                    continue
 
-                logging.info('캡처한 이미지를 읽는중....')
+                logger.info(f"프레임 {frame_count} 캡처 완료: {capture_path}")
+                logger.info(f'점수1 : {score1}')
+
+                logger.info('캡처한 이미지 읽기 중...')
                 image = cv2.imread(capture_path)
                 if image is None:
-                    logging.error(f"File {capture_path} does not exist.")
+                    logger.error(f"파일 {capture_path}을(를) 읽을 수 없음")
                     continue
 
                 height, width = image.shape[:2]
                 roi_easyocr = image[int(height * 0.07):int(height * 0.92),
                                     int(width * 0.215):int(width * 0.574)]
-                logging.info('ocr 진행중입니다..')
-                logging.info('시간이 오래 소요될수 있습니다..')
+                logger.info('OCR 진행 중...')
                 roi_easyocr = preprocess_image(roi_easyocr)
                 reader = easyocr.Reader(['ko', 'en'])
                 result_easyocr = reader.readtext(roi_easyocr, detail=0)
-                logging.info('ocr 완료..')
+                logger.info('OCR 완료')
 
                 name_list = result_easyocr.copy()
-
-                logging.info(f'Name list count: %len(name_list)')
+                logger.info(f'이름 리스트 수: {len(name_list)}')
 
                 if 'SUBSTITUTES' in name_list:
                     name_list.remove('SUBSTITUTES')
 
-                logging.info(name_list)
+                logger.info(name_list)
                 pname_list = []
                 pnum_list = []
                 team_name = name_list[0]
@@ -158,12 +177,12 @@ async def process_video():
                 for some in range(1, len(name_list)):
                     if some % 2 == 0:
                         pname_list.append(name_list[some])
-                        logging.info(len(pname_list))
+                        logger.info(f'이름 목록 수: {len(pname_list)}')
                     else:
                         pnum_list.append(name_list[some])
 
-                if len(pname_list) == 11:
-                    logging.info('작동 여부 테스트.')
+                if len(pname_list) >= 10:
+                    logger.info('작동 여부 테스트.')
 
                     key = (team_name, tuple(pname_list), tuple(pnum_list))
                     if key not in name_counts:
@@ -171,32 +190,77 @@ async def process_video():
                     else:
                         name_counts[key] += 1
 
-                    if name_counts[key] == 1:
-                        prior_data.insert_one({
+                    if name_counts[key] == 2:
+                        # 중복 확인
+                        existing_doc = prior_data.find_one({
                             'team_name': team_name,
                             'name': pname_list,
-                            'num': pnum_list,
-                            'frame': frame_count
+                            'num': pnum_list
                         })
-                        logging.info('작동 여부 테스트.')
+                        if existing_doc is None:
+                            try:
+                                prior_data.insert_one({
+                                    'team_name': team_name,
+                                    'name': pname_list,
+                                    'num': pnum_list,
+                                    'frame': frame_count
+                                })
+                                logger.info('DB 저장 성공')
+                            except errors.PyMongoError as e:
+                                logger.error(f'DB 저장 중 오류 발생: {str(e)}')
+                        else:
+                            logger.info('중복 데이터 발견, 저장하지 않음')
 
                         unique_data_count += 1
-                        logging.info(f"DB 저장 완료했습니다.!!")
-                        logging.info({key})
-
+                        logger.info(f'고유 데이터 수: {unique_data_count}')
                         if unique_data_count >= 2:
-                            logging.info("두팀의 정보 저장 완료!!")
+                            logger.info("두 번의 고유 데이터 저장이 완료되었습니다. 프로세스를 종료합니다.")
                             break
-                        frame_count += process_skip  
-                        logging.info('900프레임(30초)을 스킵합니다!!!')
-                        logging.info('다음 프레임 찾는중....')
+
 
         cap.release()
         os.remove(temp_file_path)
-        return {"message": "Video processing completed"}
+        return {"message": "Video processing completed successfully"}
     except Exception as e:
-        logging.error(e)
+        logger.error(f'오류 발생: {str(e)}')
         return {"error": str(e)}
 
+def split_and_upload_video(input_file_path, output_prefix, segment_time, bucket_name, s3_path):
+    # FFmpeg를 사용하여 동영상을 세그먼트 단위로 분할
+    ffmpeg_command = [
+        'ffmpeg', '-i', input_file_path,
+        '-c', 'copy', '-map', '0',
+        '-segment_time', segment_time, '-f', 'segment',
+        '-reset_timestamps', '1', f'{output_prefix}%03d.mp4'
+    ]
+    subprocess.run(ffmpeg_command, check=True)
+    
+    # 잘라진 파일들을 S3에 업로드
+    for file in os.listdir('.'):
+        if file.startswith(output_prefix) and file.endswith('.mp4'):
+            s3_client.upload_file(file, bucket_name, f'{s3_path}{file}')
+            logger.info(f"Uploaded {file} to s3://{bucket_name}/{s3_path}{file}")
+            os.remove(file)  # 업로드 후 로컬 파일 삭제
+
+@app.post("/split-and-upload-video/")
+async def split_and_upload_video_endpoint():
+    try:
+        with NamedTemporaryFile(delete=False) as temp_file:
+            temp_file_path = temp_file.name
+            logger.info(f"S3에서 최신 파일을 {temp_file_path}로 다운로드")
+            latest_file_key = download_latest_s3_file(BUCKET_NAME, S3_UPLOAD_PATH, temp_file_path)
+            logger.info(f"S3에서 파일 다운로드 완료: {latest_file_key}")
+
+        # 비디오를 분할하고 S3에 업로드
+        split_and_upload_video(temp_file_path, "seg", "00:01:30", BUCKET_NAME, S3_OUTPUT_PATH)
+
+        return {"message": "Video split and upload completed successfully"}
+
+    except Exception as e:
+        logger.error(f"오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
