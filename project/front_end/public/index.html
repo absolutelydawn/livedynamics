@@ -4,34 +4,87 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Processor</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f4f4f4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        header {
+            width: 100%;
+            text-align: center;
+            background-color: #fff;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 40px;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            color: #333;
+        }
+
+        main {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-width: 600px;
+            background-color: #fff;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 10px;
+        }
+
+        #controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        #controls button {
+            display: block;
+            width: 80%;
+            padding: 15px;
+            margin: 10px 0;
+            background-color: #66bb6a;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.2em;
+            transition: background-color 0.3s;
+        }
+
+        #controls button:hover {
+            background-color: #66bb6a;
+        }
+    </style>
 </head>
 <body>
-    <h1>Video Processor</h1>
-    <button id="process-video">Process Video</button>
-    <button id="split-upload-video">Split and Upload Video</button>
+    <header>
+        <h1>LIVE DYNAMICS</h1>
+    </header>
 
-    <script>
-        document.getElementById('process-video').addEventListener('click', async () => {
-            try {
-                const response = await fetch('/process-video');
-                const data = await response.json();
-                alert('Video processed: ' + JSON.stringify(data));
-            } catch (error) {
-                console.error('Error processing video:', error);
-                alert('Failed to process video');
-            }
-        });
-
-        document.getElementById('split-upload-video').addEventListener('click', async () => {
-            try {
-                const response = await fetch('/split-and-upload-video', { method: 'POST' });
-                const data = await response.json();
-                alert('Video split and uploaded: ' + JSON.stringify(data));
-            } catch (error) {
-                console.error('Error splitting and uploading video:', error);
-                alert('Failed to split and upload video');
-            }
-        });
-    </script>
+    <main>
+        <div id="controls">
+            <button onclick="window.location.href='/process-video.html'">OCR 진행</button>
+            <button onclick="window.location.href='/split-upload-video.html'">영상 편집후 업로드</button>
+            <button onclick="window.location.href='/results.html'">경기 레포트 화면</button>
+        </div>
+    </main>
 </body>
 </html>

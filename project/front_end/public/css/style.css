@@ -1,0 +1,142 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+}
+
+body {
+    background-color: #f4f4f4;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+}
+
+header {
+    width: 100%;
+    text-align: center;
+    background-color: #fff;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+header h1 {
+    font-size: 2em;
+    color: #333;
+}
+
+main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 1200px;
+}
+
+#controls {
+    margin-right: 20px;
+    background-color: #fff;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+#controls button {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    background-color: #66bb6a;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1em;
+}
+
+#controls button:hover {
+    background-color: #57a05a;
+}
+
+#controls ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+#controls li {
+    margin-bottom: 10px;
+    color: #666;
+}
+
+#controls li strong {
+    color: #000;
+}
+
+#team-buttons {
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+#team-buttons button {
+    padding: 10px 20px;
+    background-color: #2196f3;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+#team-buttons button:hover {
+    background-color: #1976d2;
+}
+
+#team-results {
+    flex-grow: 1;
+    background-color: #fff;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+#team-results h2 {
+    margin-bottom: 20px;
+    color: #333;
+}
+
+#team-results table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+#team-results th, #team-results td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+}
+
+#team-results th {
+    background-color: #f2f2f2;
+    color: #333;
+}
+
+.log-form {
+    width: 100%;
+    max-width: 1200px;
+    background-color: #fff;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-top: 20px;
+    overflow-y: auto;
+    max-height: 400px;
+}
+
+.log-messages {
+    font-family: monospace;
+    color: #333;
+    height: 300px;
+    overflow-y: auto;
+}

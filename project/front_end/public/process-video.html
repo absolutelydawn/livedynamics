@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Process Video</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <h1>LIVE DYNAMICS - Process Video</h1>
+    </header>
+
+    <main>
+        <div id="controls">
+            <button id="start-process-video">Start Processing Video</button>
+        </div>
+        <form id="log-form" class="log-form">
+            <h2>Logs</h2>
+            <div id="log-messages" class="log-messages"></div>
+        </form>
+    </main>
+
+    <script>
+        const logMessages = document.getElementById('log-messages');
+        const websocket = new WebSocket(`ws://${window.location.hostname}:8000/ws/logs`);
+
+        websocket.onopen = () => {
+            console.log('WebSocket 연결 성공');
+        };
+
+        websocket.onmessage = (event) => {
+            console.log('WebSocket 메시지 수신:', event.data);
+            const logMessage = document.createElement('div');
+            logMessage.textContent = event.data;
+            logMessages.appendChild(logMessage);
+            logMessages.scrollTop = logMessages.scrollHeight; // 자동 스크롤
+        };
+
+        websocket.onerror = (error) => {
+            console.error('WebSocket 오류:', error);
+        };
+
+        websocket.onclose = () => {
+            console.log('WebSocket 연결 종료');
+        };
+
+        document.getElementById('start-process-video').addEventListener('click', async () => {
+            try {
+                const response = await fetch('http://15.164.180.50:8000/process-video', { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    alert('Video processed: ' + JSON.stringify(data));
+                } else {
+                    alert('Failed to process video: ' + JSON.stringify(data));
+                }
+            } catch (error) {
+                console.error('Error processing video:', error);
+                alert('Failed to process video');
+            }
+        });
+    </script>
+</body>
+</html>

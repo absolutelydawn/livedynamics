@@ -1,19 +1,66 @@
-from fastapi import FastAPI, HTTPException
+import logging
 import os
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import boto3
 import cv2
 import easyocr
 from pymongo import MongoClient, errors
 from dotenv import load_dotenv
-import logging
 import subprocess
 from tempfile import NamedTemporaryFile
 import tempfile
+import asyncio
+
 # 설정 로그
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logger.info(f'WebSocket 연결됨: {websocket.client.host}:{websocket.client.port}')
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+        logger.info(f'WebSocket 연결 종료: {websocket.client.host}:{websocket.client.port}')
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+manager = ConnectionManager()
+
+# 비동기 로그 핸들러
+class AsyncWebSocketHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+
+    async def async_emit(self, record):
+        message = self.format(record)
+        await manager.broadcast(message)
+
+    def emit(self, record):
+        asyncio.create_task(self.async_emit(record))
+
+# 로그 핸들러 설정
+logger.addHandler(AsyncWebSocketHandler())
+logger.setLevel(logging.INFO)
+
+# CORS 설정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 환경 변수 로드
 load_dotenv()
@@ -21,6 +68,7 @@ load_dotenv()
 # MongoDB 설정
 mongo_uri = os.getenv('MONGO_URI')
 client = MongoClient(mongo_uri)
+
 db = client['ocr']
 prior_data = db['prior_data']
 
@@ -41,8 +89,7 @@ s3_client = boto3.client(
 
 BUCKET_NAME = os.getenv('AWS_S3_BUCKET')
 S3_PATH = os.getenv('AWS_S3_PREFIX')
-BUCKET_NAME = os.getenv('AWS_S3_BUCKET')
-S3_UPLOAD_PATH = 'uploadedFiles/'  # 추가
+S3_UPLOAD_PATH = 'uploadedFiles/'
 S3_OUTPUT_PATH = 'sepVideo/'
 
 def calculate_histogram(image):
@@ -71,6 +118,76 @@ def download_latest_s3_file(bucket_name, s3_path, download_path):
     latest_file_key = latest_file['Key']
     s3_client.download_file(bucket_name, latest_file_key, download_path)
     return latest_file_key
+
+async def split_and_upload_video(input_file_path, output_prefix, segment_time, bucket_name, s3_path):
+    # FFmpeg를 사용하여 비디오를 분할
+    cmd = [
+        'ffmpeg', '-i', input_file_path, '-c', 'copy', '-map', '0',
+        '-segment_time', segment_time, '-f', 'segment',
+        '-reset_timestamps', '1', f'{output_prefix}%03d.mp4'
+    ]
+    process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    stdout, stderr = await process.communicate()
+
+    if process.returncode == 0:
+        logger.info("Video split process completed successfully.")
+        for file in os.listdir('.'):
+            if file.startswith(output_prefix) and file.endswith('.mp4'):
+                s3_client.upload_file(file, bucket_name, f'{s3_path}{file}')
+                logger.info(f"Uploaded {file} to s3://{bucket_name}/{s3_path}{file}")
+                os.remove(file)
+    else:
+        logger.error(f"Error in video splitting process: {stderr.decode()}")
+
+@app.get("/get-results")
+async def get_results(team: str):
+    try:
+        results = prior_data.find_one({"team_name": team})
+        if not results:
+            raise HTTPException(status_code=404, detail="Team not found")
+        return {
+            "team_name": results["team_name"],
+            "name": results["name"],
+            "num": results["num"]
+        }
+    except Exception as e:
+        logger.error(f'Error fetching results for team {team}: {str(e)}')
+        raise HTTPException(status_code=500, detail="Failed to fetch results")
+
+@app.get("/get-teams")
+async def get_teams():
+    try:
+        teams = prior_data.distinct("team_name")
+        return teams
+    except Exception as e:
+        logger.error(f'오류 발생: {str(e)}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.websocket("/ws/logs")
+async def websocket_logs(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # Keep the connection open
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+@app.post("/split-and-upload-video/")
+async def split_and_upload_video_endpoint():
+    try:
+        with NamedTemporaryFile(delete=False) as temp_file:
+            temp_file_path = temp_file.name
+            logger.info(f"S3에서 최신 파일을 {temp_file_path}로 다운로드")
+            latest_file_key = download_latest_s3_file(BUCKET_NAME, S3_UPLOAD_PATH, temp_file_path)
+            logger.info(f"S3에서 파일 다운로드 완료: {latest_file_key}")
+
+        await split_and_upload_video(temp_file_path, "seg", "00:01:30", BUCKET_NAME, S3_OUTPUT_PATH)
+
+        return {"message": "Video split and upload completed successfully"}
+
+    except Exception as e:
+        logger.error(f"오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process-video/")
 async def process_video():
@@ -132,9 +249,6 @@ async def process_video():
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE
                 )
-
-                logger.info(f'FFmpeg stdout: {process.stdout.decode()}')
-                logger.info(f'FFmpeg stderr: {process.stderr.decode()}')
 
                 if process.returncode != 0:
                     logger.error(f'FFmpeg 프로세스가 반환 코드 {process.returncode}로 실패')
@@ -217,49 +331,12 @@ async def process_video():
                             logger.info("두 번의 고유 데이터 저장이 완료되었습니다. 프로세스를 종료합니다.")
                             break
 
-
         cap.release()
         os.remove(temp_file_path)
         return {"message": "Video processing completed successfully"}
     except Exception as e:
         logger.error(f'오류 발생: {str(e)}')
         return {"error": str(e)}
-
-def split_and_upload_video(input_file_path, output_prefix, segment_time, bucket_name, s3_path):
-    # FFmpeg를 사용하여 동영상을 세그먼트 단위로 분할
-    ffmpeg_command = [
-        'ffmpeg', '-i', input_file_path,
-        '-c', 'copy', '-map', '0',
-        '-segment_time', segment_time, '-f', 'segment',
-        '-reset_timestamps', '1', f'{output_prefix}%03d.mp4'
-    ]
-    subprocess.run(ffmpeg_command, check=True)
-    
-    # 잘라진 파일들을 S3에 업로드
-    for file in os.listdir('.'):
-        if file.startswith(output_prefix) and file.endswith('.mp4'):
-            s3_client.upload_file(file, bucket_name, f'{s3_path}{file}')
-            logger.info(f"Uploaded {file} to s3://{bucket_name}/{s3_path}{file}")
-            os.remove(file)  # 업로드 후 로컬 파일 삭제
-
-@app.post("/split-and-upload-video/")
-async def split_and_upload_video_endpoint():
-    try:
-        with NamedTemporaryFile(delete=False) as temp_file:
-            temp_file_path = temp_file.name
-            logger.info(f"S3에서 최신 파일을 {temp_file_path}로 다운로드")
-            latest_file_key = download_latest_s3_file(BUCKET_NAME, S3_UPLOAD_PATH, temp_file_path)
-            logger.info(f"S3에서 파일 다운로드 완료: {latest_file_key}")
-
-        # 비디오를 분할하고 S3에 업로드
-        split_and_upload_video(temp_file_path, "seg", "00:01:30", BUCKET_NAME, S3_OUTPUT_PATH)
-
-        return {"message": "Video split and upload completed successfully"}
-
-    except Exception as e:
-        logger.error(f"오류 발생: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 if __name__ == "__main__":
     import uvicorn
