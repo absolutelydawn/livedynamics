@@ -1,0 +1,130 @@
+<!Doctype html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Live Dynamics</title>
+        <link rel="stylesheet" type="text/css" href="/styles.css">
+    </head>
+    <body>
+        <h1>Live Dynamics</h1>
+        <form ref='uploadForm' id='uploadForm' action='/upload' method='post' encType="multipart/form-data">
+            <input type="file" name="file" id="fileInput"/>
+            <button type='submit'>Upload</button>
+        </form>
+        
+        <p id="loadingMessage" style="display:none; color:grey;" class="center">loading...</p>
+        
+        <div id="teams" style="display:none;" class="center">
+            <div class="team">
+                <h2>HOME : <span id="homeTeam">team_name</span></h2>
+                <ul id="homePlayers">
+                    <li>선수이름</li>
+                    <li>선수이름</li>
+                    <li>선수이름</li>
+                    <li>선수이름</li>
+                </ul>
+            </div>
+            <div class="team">
+                <h2>AWAY : <span id="awayTeam">team_name</span></h2>
+                <ul id="awayPlayers">
+                    <li>선수이름</li>
+                    <li>선수이름</li>
+                    <li>선수이름</li>
+                    <li>선수이름</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div id="button-container">
+            <button id="originalVideoButton" onclick="checkOriginalVideo()">원본영상 확인하기</button>
+            <button id="analyzedVideoButton" onclick="checkAnalyzedVideo()">영상 분석하기</button>
+            <button id="formerClipsButton" onclick="location.href='/formerclips'">이전 경기 분석 보러가기</button>
+        </div>
+
+        <div id="analysisMessageContainer" class="center" style="display:none;">
+            <hr/>
+            <div id="analysisMessage">영상을 분석중입니다 ...</div>
+        </div>
+        
+        <div id="video-player-container" style="display:none;" class="center">
+            <video id="video-player" width="80%" controls>
+                <source src="" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+        </div>
+        
+        <script>
+            let lastUploadTime = null;
+
+            document.getElementById('uploadForm').addEventListener('submit', function(event) {
+                event.preventDefault();
+                const formData = new FormData(this);
+                const loadingMessage = document.getElementById('loadingMessage');
+                const teams = document.getElementById('teams');
+                
+                loadingMessage.style.display = 'block';
+                
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.text())
+                .then(result => {
+                    loadingMessage.style.display = 'none';
+                    teams.style.display = 'flex';
+                    lastUploadTime = new Date();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+            });
+
+            function checkOriginalVideo() {
+                if (!lastUploadTime) {
+                    alert('동영상을 업로드하세요');
+                } else {
+                    playVideo('/path/to/original/video'); // 실제 비디오 경로로 수정 필요
+                }
+            }
+
+            function checkAnalyzedVideo() {
+                const analysisMessageContainer = document.getElementById('analysisMessageContainer');
+                analysisMessageContainer.style.display = 'block';
+            }
+
+            function playVideo(url) {
+                const videoPlayerContainer = document.getElementById('video-player-container');
+                const videoPlayer = document.getElementById('video-player');
+                videoPlayer.src = url;
+                videoPlayerContainer.style.display = 'block';
+                videoPlayer.play();
+            }
+
+            function fetchFileList() {
+                fetch('/list')
+                    .then(response => response.json())
+                    .then(data => {
+                        const videoList = document.getElementById('video-list');
+                        const emptyMessage = document.getElementById('empty-message');
+                        videoList.innerHTML = '';
+                        if (data.length === 0) {
+                            emptyMessage.style.display = 'block';
+                        } else {
+                            emptyMessage.style.display = 'none';
+                            data.forEach(item => {
+                                const videoItem = document.createElement('div');
+                                videoItem.className = 'video-item';
+                                videoItem.innerHTML = `
+                                    <p>${item.key}</p>
+                                    <button onclick="playVideo('${item.url}')">Play</button>
+                                `;
+                                videoList.appendChild(videoItem);
+                            });
+                        }
+                    });
+            }
+
+            document.addEventListener('DOMContentLoaded', fetchFileList);
+        </script>
+    </body>
+</html>
