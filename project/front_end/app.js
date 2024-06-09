@@ -35,6 +35,18 @@ app.post('/split-and-upload-video', async (req, res) => {
     }
 });
 
+// 팀 데이터를 가져오는 라우트
+app.get('/get-results', async (req, res) => {
+    const team = req.query.team;
+    try {
+        const response = await axios.get(`http://15.164.180.50:8000/get-results?team=${team}`);
+        res.send(response.data);
+    } catch (error) {
+        console.error('Error fetching team data:', error);
+        res.status(500).send({ error: 'Failed to fetch team data' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server is running on http://15.164.180.50:${PORT}`);
 });

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Results</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <h1>LIVE DYNAMICS</h1>
+    </header>
+
+    <main>
+        <div id="controls">
+            <button id="view-scores">숏츠 보기</button>
+            <button id="view-reports">리포트 보기</button>
+            <ul>
+                <li>팀 별 리포트</li>
+                <li><strong>선수별 리포트</strong></li>
+                <div id="team-buttons">
+                    <!-- 팀 버튼이 동적으로 추가될 곳 -->
+                </div>
+            </ul>
+        </div>
+
+
+
+        <section id="team-results">
+            <h2>경기 리포트 | <span id="team-name">팀을 선택해주세요</span></h2>
+            <table id="player-table">
+                <thead>
+                    <tr>
+                        <th>팀 이름</th>
+                        <th>선수 이름</th>
+                        <th>등번호</th>
+                        <th>평점</th>
+                        <th>골</th>
+                        <th>어시스트</th>
+                        <th>슛</th>
+                        <th>패스</th>
+                        <th>태클</th>
+                        <th>파울</th>
+                    </tr>
+                </thead>
+                <tbody id="player-table-body">
+                </tbody>
+            </table>
+        </section>
+    </main>
+
+    <script>
+        async function fetchTeams() {
+            try {
+                const response = await fetch('http://15.164.180.50:8000/get-teams');
+                const teams = await response.json();
+                renderTeamButtons(teams);
+            } catch (error) {
+                console.error('Error fetching teams:', error);
+            }
+        }
+
+        function renderTeamButtons(teams) {
+            const teamButtonsDiv = document.getElementById('team-buttons');
+            teamButtonsDiv.innerHTML = ''; // 이전 버튼 지우기
+
+            teams.forEach(team => {
+                const button = document.createElement('button');
+                button.textContent = team;
+                button.onclick = () => fetchTeamData(team);
+                teamButtonsDiv.appendChild(button);
+            });
+        }
+
+        async function fetchTeamData(teamName) {
+            try {
+                const response = await fetch(`http://15.164.180.50:8000/get-results?team=${teamName}`);
+                const data = await response.json();
+                renderPlayerTable(data);
+            } catch (error) {
+                console.error('Error fetching team data:', error);
+            }
+        }
+
+        function renderPlayerTable(data) {
+            const tableBody = document.getElementById('player-table-body');
+            tableBody.innerHTML = ''; // 이전 데이터 지우기
+
+            document.getElementById('team-name').textContent = data.team_name;
+
+            data.name.forEach((name, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${data.team_name}</td>
+                    <td>${name}</td>
+                    <td>${data.num[index]}</td>
+                    <td></td> <!-- 빈 칸 -->
+                    <td></td> <!-- 빈 칸 -->
+                    <td></td> <!-- 빈 칸 -->
+                    <td></td> <!-- 빈 칸 -->
+                    <td></td> <!-- 빈 칸 -->
+                    <td></td> <!-- 빈 칸 -->
+                    <td></td> <!-- 빈 칸 -->
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        // 페이지가 로드될 때 팀 버튼을 가져옴
+        window.onload = fetchTeams;
+    </script>
+</body>
+</html>
